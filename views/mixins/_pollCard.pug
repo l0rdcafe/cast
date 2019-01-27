@@ -1,0 +1,7 @@
+mixin pollCard(poll)
+  .poll
+    h2.title
+      a(href=`/poll/${poll._id}`) #{poll.title}
+      .poll__action--count
+        span
+          != `${poll.votes.length} Votes`

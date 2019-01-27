@@ -1,0 +1,13 @@
+extends layout
+
+include mixins/_pollCard
+
+block content
+  .inner
+    h2=title
+    .polls
+      if polls.length
+        each poll in polls
+          +pollCard(poll)
+      else
+        p There are no polls. Please login or register to create a poll.
