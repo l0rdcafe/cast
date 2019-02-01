@@ -1,38 +1,64 @@
-const passport = require("passport");
 const mongoose = require("mongoose");
 const crypto = require("crypto");
 const { promisify } = require("util");
+const bcrypt = require("bcrypt");
 const mail = require("../handlers/mail");
+const sessionStore = require("../sessions/session_store");
 
 const User = mongoose.model("User");
 
-exports.login = passport.authenticate("local", {
-  failureRedirect: "/login",
-  failureFlash: "Failed Login",
-  successRedirect: "/",
-  successFlash: "You are now logged in"
-});
+exports.login = async (req, res, next) => {
+  try {
+    const { username, password: pw } = req.body;
+    const user = await User.findOne({ username });
 
-exports.logout = (req, res) => {
-  req.logout();
-  req.flash("success", "You are now logged out!");
-  res.redirect("/");
+    if (!user) {
+      return res.json({ error: "Username does not exist" });
+    }
+
+    const isValidPassword = await bcrypt.compare(pw, user.password);
+
+    if (!isValidPassword) {
+      return res.json({ error: "Wrong password for username" });
+    }
+
+    req.session.userId = user._id;
+    sessionStore.set(req.session.id, req.session, async err => {
+      if (err) {
+        return next(err);
+      }
+
+      res.status(200).json({ username: user.username, id: user._id, email: user.email });
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+
+exports.logout = async (req, res, next) => {
+  const fakeCookie = `${req.get("Cookie")}; Path=/; HttpOnly; expires=Thu, Jan 01 1970 00:00:00 UTC;`;
+  const sessionId = req.session.id;
+  sessionStore.destroy(sessionId, err => {
+    if (err) {
+      return next(err);
+    }
+    res.set({ "Set-Cookie": fakeCookie });
+    res.status(200).end();
+  });
 };
 
 exports.isLoggedIn = (req, res, next) => {
-  if (req.isAuthenticated()) {
+  if (req.session.userId) {
     return next();
   }
 
-  req.flash("error", "You must be logged in to do that");
-  res.redirect("/login");
+  res.status(401).json({ error: "You are unauthorized to perform this action" });
 };
 
 exports.forgot = async (req, res, next) => {
   try {
     const user = await User.findOne({ email: req.body.email });
     if (!user) {
-      req.flash("error", "No account with that email exists");
       return res.redirect("/login");
     }
 
@@ -49,7 +75,6 @@ exports.forgot = async (req, res, next) => {
     req.flash("success", "You have been emailed a password reset link");
     res.redirect("/login");
   } catch (e) {
-    console.log(e);
     next(e);
   }
 };
@@ -62,23 +87,12 @@ exports.reset = async (req, res, next) => {
     });
 
     if (!user) {
-      req.flash("error", "Password reset is invalid or has expired");
       return res.redirect("/login");
     }
     res.render("reset", { title: "Reset Password" });
   } catch (e) {
-    console.log(e);
     next(e);
   }
-};
-
-exports.confirmedPasswords = (req, res, next) => {
-  if (req.body.password === req.body["password-confirm"]) {
-    return next();
-  }
-
-  req.flash("error", "Passwords do not match");
-  res.redirect("back");
 };
 
 exports.update = async (req, res, next) => {
@@ -102,7 +116,19 @@ exports.update = async (req, res, next) => {
     req.flash("success", "Your password has been reset");
     res.redirect("/");
   } catch (e) {
-    console.log(e);
+    next(e);
+  }
+};
+
+exports.isValidSession = async (req, res, next) => {
+  try {
+    if (req.session.userId) {
+      const user = await User.findById(req.session.userId);
+      res.status(200).json({ username: user.username, email: user.email, id: user._id });
+    } else {
+      res.status(404).json({});
+    }
+  } catch (e) {
     next(e);
   }
 };

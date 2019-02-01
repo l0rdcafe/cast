@@ -22,22 +22,16 @@ const userSchema = new mongoose.Schema({
     validate: [validator.isEmail, "Invalid Email Address"],
     required: "Please supply an email address"
   },
+  password: {
+    type: String,
+    trim: true,
+    required: "Please supply a password"
+  },
   resetPasswordToken: String,
   resetPasswordExpires: Date,
   votes: [{ option: String, poll: { type: mongoose.Schema.ObjectId, ref: "Poll" } }]
 });
 
-userSchema.plugin(passportLocalMongoose, { usernameField: "username" });
-userSchema.statics.registerAsync = function(data, password) {
-  return new Promise((resolve, reject) => {
-    this.register(data, password, (err, user) => {
-      if (err) {
-        return reject(err);
-      }
-      resolve(user);
-    });
-  });
-};
 userSchema.plugin(mongodbErrorHandler);
 
 module.exports = mongoose.model("User", userSchema);

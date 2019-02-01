@@ -6,89 +6,100 @@ const User = mongoose.model("User");
 exports.getPolls = async (req, res, next) => {
   try {
     const polls = await Poll.find();
-    res.render("polls", { title: "Polls", polls });
+    res.json(polls);
   } catch (e) {
-    console.log(e);
     next(e);
   }
-};
-
-exports.createForm = (req, res) => {
-  res.render("createPoll", { title: "Create Poll" });
 };
 
 exports.createPoll = async (req, res, next) => {
   try {
     const options = req.body.options.split("/").map(i => i.trim());
     const { title } = req.body;
-    const fields = { title, options };
-    const poll = await new Poll(fields).save();
-    req.flash("success", `Successfully created ${poll.title}`);
-    res.redirect(`/poll/${poll._id}`);
+    const { userId: author } = req.session;
+    const fields = { title, options, author };
+    const poll = new Poll(fields);
+    await poll.save();
+    res.status(201).json({ id: poll._id });
   } catch (e) {
-    console.log(e);
     next(e);
   }
 };
 
 exports.getPoll = async (req, res, next) => {
   try {
-    const poll = await Poll.findOne({ _id: req.params.id });
+    const poll = await Poll.findOne({ _id: req.params.id }).populate("author", "username");
 
     if (!poll) {
       return next();
     }
-    res.render("poll", { title: poll.title, poll });
+    res.status(200).json(poll);
   } catch (e) {
-    console.log(e);
     next(e);
   }
 };
 
 exports.addOption = async (req, res, next) => {
   try {
-    const poll = await Poll.findOneAndUpdate({ _id: req.params.id }, { $push: { options: req.body.add_option } });
-    req.flash(
-      "success",
-      `Successfully added <strong>${req.body.add_option}</strong> to <strong>'${poll.title}'</strong>`
-    );
-    res.redirect(`/poll/${poll._id}`);
+    const poll = await Poll.findOneAndUpdate(
+      { _id: req.params.id },
+      { $push: { options: req.body.newOption } },
+      { new: true }
+    ).populate("author", "username");
+    console.log(poll);
+    res.status(201).json(poll);
   } catch (e) {
-    console.log(e);
     next(e);
   }
 };
 
 exports.castVote = async (req, res, next) => {
   try {
-    const vote = { option: req.body.option, voter: req.user._id };
+    const vote = { option: req.body.option, voter: req.session.userId };
     const poll = await Poll.findOne({ _id: req.params.id });
     const voters = poll.votes.map(v => v.voter.toString());
-    const hasVoted = voters.includes(req.user._id.toString());
+    const hasVoted = voters.includes(req.session.userId.toString());
 
     if (hasVoted) {
-      req.flash("error", "You have already voted for this poll");
-      return res.redirect(`/poll/${req.params.id}`);
+      return res.status(400).json({ error: "You have already voted for this poll" });
     }
 
     const updatedPoll = await Poll.findOneAndUpdate(
       { _id: req.params.id },
       { $push: { votes: vote } },
       { runValidators: true, new: true }
-    ).exec();
+    )
+      .populate("author", "username")
+      .exec();
 
     await User.findOneAndUpdate(
-      { _id: req.user._id },
+      { _id: req.session.userId },
       { $push: { votes: { option: req.body.option, poll: req.params.id } } },
       { runValidators: true, new: true }
     ).exec();
-    req.flash(
-      "success",
-      `Successfully voted for <strong>${req.body.option}</strong> in the <strong>'${updatedPoll.title}'</strong> poll`
-    );
-    res.redirect(`/poll/${updatedPoll._id}`);
+    res.status(201).json({ ...updatedPoll._doc });
   } catch (e) {
-    console.log(e);
+    next(e);
+  }
+};
+
+exports.deletePoll = async (req, res, next) => {
+  try {
+    if (req.session.userId !== req.body.userId) {
+      return res.status(401).json({ error: "You cannot delete this poll as you are not its author" });
+    }
+
+    const poll = await Poll.findById(req.params.id);
+
+    if (!poll) {
+      return res.status(400).json({ error: "Poll does not exist" });
+    }
+
+    const votersIds = poll.votes.map(vote => vote.voter);
+    await User.update({ _id: { $in: votersIds } }, { $pull: { votes: { poll: req.params.id } } }, { multi: true });
+    await poll.remove();
+    res.status(202).end();
+  } catch (e) {
     next(e);
   }
 };
