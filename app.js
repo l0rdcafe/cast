@@ -5,12 +5,9 @@ const bodyParser = require("body-parser");
 const morgan = require("morgan")("short");
 const path = require("path");
 const expressValidator = require("express-validator");
-
 const sessionStore = require("./sessions/session_store");
-
 require("./models/User");
 require("./models/Poll");
-
 const routes = require("./routes");
 require("dotenv").config();
 
