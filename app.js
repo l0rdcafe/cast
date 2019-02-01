@@ -36,7 +36,7 @@ app.use((err, req, res, next) => {
   next();
 });
 
-mongoose.connect(process.env.DATABASE_URL);
+mongoose.connect(process.env.PROD_MONGODB);
 mongoose.Promise = global.Promise;
 mongoose.connection.on("error", err => {
   console.error(err.message);
